@@ -122,16 +122,6 @@ fun ImageStream.bakeIcons(
 fun ImageStream.writeTo(path: Path): Unit = this
     .forEach { ImageIO.write(it.second, "png", Files.newOutputStream(path.resolve(it.first))) }
 
-fun pipeline(
-    starter: () -> ImageStream,
-    vararg modifiers: (ImageStream) -> ImageStream,
-    finisher: (ImageStream) -> Unit
-) {
-    var source = starter()
-    modifiers.forEach { source = it(source) }
-    finisher(source)
-}
-
 typealias Pipeline = MutableList<(ImageStream) -> ImageStream>
 
 fun createPipeline(): Pipeline = mutableListOf()
@@ -213,13 +203,13 @@ fun build(proc: Iterator<String>) = job("BUILD") {
         .add(true) { it.scaleTo(64) }
         .add(true) { it.tint(Color(0x29272A), 1.0f) }
         .add(!bakeBg) { it.addBg(TEMPLATES.resolve("button_small_alpha.png").toBI()) }
-        .execute(osIcons(), BUILD_ICONS)
+        .execute(otherIcons(), BUILD_ICONS)
 
     createPipeline()
         .add(true) { it.map { "background.png" to it.second } }
         .add(bakeBg) { it.bakeIcons(TEMPLATES.resolve("button_big_alpha.png").toBI().scaleTo(256), osIconsCount) }
         .add(bakeBg)
-        { it.bakeIcons(TEMPLATES.resolve("button_small_alpha.png").toBI().scaleTo(64), osIconsCount, row = false) }
+        { it.bakeIcons(TEMPLATES.resolve("button_small_alpha.png").toBI().scaleTo(64), otherIconsCount, row = false) }
         .execute(backgroundImage(), BUILD)
 
     createPipeline()
