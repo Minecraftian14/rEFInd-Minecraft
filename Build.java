@@ -8,20 +8,83 @@ import java.awt.image.ColorModel;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.Map;
+import java.util.*;
+import java.util.function.Supplier;
+import java.util.stream.Stream;
 
 import static java.nio.file.StandardCopyOption.REPLACE_EXISTING;
 
 class Build {
 
     static final String NAME = "rEFInd-Minecraft";
+
     static final Path ROOT = Path.of("").toAbsolutePath();
     static final Path SRC = ROOT.resolve("icons");
-    static final Path BUILD = ROOT.resolve("build").resolve(NAME);
     static final Path TEMPLATES = ROOT.resolve("templates");
+    static final Path BUILD = ROOT.resolve("build").resolve(NAME);
+    static final Path BUILD_ICONS = BUILD.resolve("icons");
+
+    interface ESupplier<T> {
+        T get() throws Exception;
+    }
+
+    static <T> T tryOn(ESupplier<T> supplier, T def) {
+        try {
+            return supplier.get();
+        } catch (Exception e) {
+            e.printStackTrace(System.err);
+            return def;
+        }
+    }
+
+    static final Supplier<Stream<BufferedImage>> OS_ICONS = () -> tryOn(() -> Files.list(SRC), Stream.<Path>empty())
+            .filter(p -> p.getFileName().toString().matches("^os_.*\\.png$"))
+            .map(p -> tryOn(() -> ImageIO.read(Files.newInputStream(p)), null))
+            .filter(Objects::nonNull);
+
+    static final Supplier<Stream<BufferedImage>> OTHER_ICONS = () -> tryOn(() -> Files.list(SRC), Stream.<Path>empty())
+            .filter(p -> p.getFileName().toString().matches("^os_.*\\.png$"))
+            .map(p -> tryOn(() -> ImageIO.read(Files.newInputStream(p)), null))
+            .filter(Objects::nonNull);
+
+    static Stream<BufferedImage> tint(Stream<BufferedImage> input) {
+        return input.map(image -> {
+            var output = createCompatibleImage(image.getWidth(), image.getHeight());
+            var graphics = output.createGraphics();
+            graphics.drawImage(image, TintOp.INSTANCE, 0, 0);
+            graphics.dispose();
+            return output;
+        });
+    }
+
+    static Stream<BufferedImage> addBg(Stream<BufferedImage> input, BufferedImage bg) {
+        return input.map(image -> {
+            var output = createCompatibleImage(image.getWidth(), image.getHeight());
+            var graphics = output.createGraphics();
+            graphics.drawImage(bg, 0, 0, image.getWidth(), image.getHeight(), null);
+            graphics.drawImage(image, 0, 0, null);
+            graphics.dispose();
+            return output;
+        });
+    }
+
+    static Stream<BufferedImage> bakeIcons(Stream<BufferedImage> input, BufferedImage bg) {
+        return input.map(image -> {
+            var output = createCompatibleImage(image.getWidth(), image.getHeight());
+            var graphics = output.createGraphics();
+            graphics.drawImage(bg, 0, 0, image.getWidth(), image.getHeight(), null);
+            graphics.drawImage(image, 0, 0, null);
+            graphics.dispose();
+            return output;
+        });
+    }
+
+    static void consume(Stream<BufferedImage> stream) {
+        stream.forEach(bg -> {
+
+        });
+    }
+
 
     public static void main(String[] args) throws IOException {
         app(Arrays.stream(args).map(String::trim).map(String::toLowerCase).iterator());
@@ -78,15 +141,21 @@ class Build {
         prt("    Build:", build);
         prt("    Args :", args);
 
-        if (args.containsKey("bgbakeicons")) {
-            copyOsIcons(src, buildIcons);
-            copyOtherIcons(src, buildIcons);
-        } else {
-            transmutateOsIcons(src, templates, buildIcons);
-            transmutateOtherIcons(src, templates, buildIcons);
-        }
-        migrateConfiguration(ROOT, build);
-        manageOtherFiles(args, ROOT, templates, build);
+        var osIcons = OS_ICONS.get();
+        osIcons = tint(osIcons);
+        osIcons = addBg(osIcons, null);
+
+
+
+//        if (args.containsKey("bgbakeicons")) {
+//            copyOsIcons(src, buildIcons);
+//            copyOtherIcons(src, buildIcons);
+//        } else {
+//            transmutateOsIcons(src, templates, buildIcons);
+//            transmutateOtherIcons(src, templates, buildIcons);
+//        }
+//        migrateConfiguration(ROOT, build);
+//        manageOtherFiles(args, ROOT, templates, build);
 
         prt(" ** BUILD FINISHED ** ");
         return 0;
@@ -267,6 +336,8 @@ class Build {
     }
 
     static class TintOp implements BufferedImageOp {
+        public static final BufferedImageOp INSTANCE = new TintOp(new Color(0xFF29272A), 1.0f); // Lighter shade 0xFF403B3C
+
         final Color tintColor;
         final float alpha;
 

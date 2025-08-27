@@ -1,0 +1,11 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="BuildKt build" type="JetRunConfigurationType">
+    <option name="MAIN_CLASS_NAME" value="BuildKt" />
+    <module name="rEFInd-Minecraft" />
+    <option name="PROGRAM_PARAMETERS" value="build" />
+    <shortenClasspath name="NONE" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>
