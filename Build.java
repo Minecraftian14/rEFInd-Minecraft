@@ -9,7 +9,9 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.Iterator;
+import java.util.Map;
 
 import static java.nio.file.StandardCopyOption.REPLACE_EXISTING;
 
@@ -28,6 +30,15 @@ class Build {
     static void prt(Object... objects) {
         for (var object : objects) System.out.print(object + " ");
         System.out.println('\b');
+    }
+
+    static Map<String, String> consumeArgs(Iterator<String> proc) {
+        var map = new HashMap<String, String>();
+        while (proc.hasNext()) {
+            String[] args = proc.next().split("=", 2);
+            map.put(args[0], args.length == 2 ? args[1] : "true");
+        }
+        return map;
     }
 
     static int app(Iterator<String> proc) throws IOException {
@@ -59,16 +70,23 @@ class Build {
         var build = Files.createDirectories(BUILD);
         var templates = Files.createDirectories(TEMPLATES);
         var buildIcons = Files.createDirectories(build.resolve("icons"));
+        var args = consumeArgs(proc);
 
         prt(" ** BUILD PROCESS ** ");
         prt("    Root :", ROOT);
         prt("    Src  :", src);
         prt("    Build:", build);
+        prt("    Args :", args);
 
-        transmutateOsIcons(src, templates, buildIcons);
-        copyOtherIcons(src, buildIcons);
+        if (args.containsKey("bgbakeicons")) {
+            copyOsIcons(src, buildIcons);
+            copyOtherIcons(src, buildIcons);
+        } else {
+            transmutateOsIcons(src, templates, buildIcons);
+            transmutateOtherIcons(src, templates, buildIcons);
+        }
         migrateConfiguration(ROOT, build);
-        manageOtherFiles(ROOT, templates, build);
+        manageOtherFiles(args, ROOT, templates, build);
 
         prt(" ** BUILD FINISHED ** ");
         return 0;
@@ -77,7 +95,7 @@ class Build {
     static void transmutateOsIcons(Path src, Path templates, Path build) throws IOException {
         prt(" * Transmutate Os Icons * ");
 
-        var bg = ImageIO.read(Files.newInputStream(templates.resolve("minecraft_256.png")));
+        var bg = ImageIO.read(Files.newInputStream(templates.resolve("button_big_alpha.png")));
 
         var buffer = GraphicsEnvironment.getLocalGraphicsEnvironment().getDefaultScreenDevice()
                 .getDefaultConfiguration().createCompatibleImage(256, 256);
@@ -95,14 +113,39 @@ class Build {
                 var dest_fp = build.resolve(icon_fp.getFileName());
                 var icon = ImageIO.read(Files.newInputStream(icon_fp));
 
-                graphics.drawImage(bg, 0, 0, null);
-                graphics.drawImage(icon, tintOp, 0, 0);
+                transmutate(
+                        buffer, graphics,
+                        bg, icon, tintOp
+                );
 
                 ImageIO.write(buffer, "png", Files.newOutputStream(dest_fp));
                 prt("Transmutated", icon_fp, "to", dest_fp);
             }
         } finally {
             graphics.dispose();
+        }
+    }
+
+    static void transmutate(BufferedImage dest, Graphics2D graphics, BufferedImage bg, BufferedImage clip, BufferedImageOp op) {
+        int w = dest.getWidth(), h = dest.getHeight();
+        graphics.drawImage(bg, 0, 0, w, h, null);
+        if (op == null) graphics.drawImage(clip, 0, 0, w, h, null);
+        else graphics.drawImage(clip, op, 0, 0);
+    }
+
+    static void copyOsIcons(Path src, Path build) throws IOException {
+        prt(" * Copy OS Icons * ");
+
+        try (var filesList = Files.list(src)) {
+            var files = filesList
+                    .filter(p -> p.getFileName().toString().matches("^os_.*\\.png$"))
+                    .iterator();
+            while (files.hasNext()) {
+                var file = files.next();
+                var dest = build.resolve(file.getFileName());
+                Files.copy(file, dest, REPLACE_EXISTING);
+                prt("Copied", file, "to", dest);
+            }
         }
     }
 
@@ -122,6 +165,44 @@ class Build {
         }
     }
 
+    static void transmutateOtherIcons(Path src, Path templates, Path build) throws IOException {
+        prt(" * Transmutate Other Icons * ");
+
+        var bg = ImageIO.read(Files.newInputStream(templates.resolve("button_small_alpha.png")));
+
+        var buffer = createCompatibleImage(64, 64);
+        var graphics = buffer.createGraphics();
+
+        var tintOp = new TintOp(new Color(0xFF29272A), 1.0f); // Lighter shade 0xFF403B3C
+
+        try (var filesList = Files.list(src)) {
+            var icons = filesList
+                    .filter(p -> !p.getFileName().toString().matches("^os_.*\\.png$"))
+                    .iterator();
+
+            while (icons.hasNext()) {
+                var icon_fp = icons.next();
+                var dest_fp = build.resolve(icon_fp.getFileName());
+                var icon = ImageIO.read(Files.newInputStream(icon_fp));
+
+                transmutate(
+                        buffer, graphics,
+                        bg, icon, tintOp
+                );
+
+                ImageIO.write(buffer, "png", Files.newOutputStream(dest_fp));
+                prt("Transmutated", icon_fp, "to", dest_fp);
+            }
+        } finally {
+            graphics.dispose();
+        }
+    }
+
+    private static BufferedImage createCompatibleImage(int w, int h) {
+        return GraphicsEnvironment.getLocalGraphicsEnvironment().getDefaultScreenDevice()
+                .getDefaultConfiguration().createCompatibleImage(w, h);
+    }
+
     static void migrateConfiguration(Path src, Path build) throws IOException {
         prt(" * Migrate Remaining Icons * ");
 
@@ -137,13 +218,37 @@ class Build {
         }
     }
 
-    static void manageOtherFiles(Path src, Path templates, Path build) throws IOException {
+    static void manageOtherFiles(Map<String, String> args, Path src, Path templates, Path build) throws IOException {
         prt(" * Copy Background * ");
-        Files.copy(templates.resolve("bg_480.png"), build.resolve("background.png"), REPLACE_EXISTING);
+        if (args.containsKey("bgbakeicons")) {
+            int icons = Integer.parseInt(args.get("bgbakeicons"));
+            // There is a spacing of 8 px?
+            var bg = ImageIO.read(Files.newInputStream(templates.resolve("bg_1080.png")));
+            var res = createCompatibleImage(bg.getWidth(), bg.getHeight());
+            var osIcon = ImageIO.read(Files.newInputStream(templates.resolve("button_big_alpha.png")));
+            var otherIcon = ImageIO.read(Files.newInputStream(templates.resolve("button_small_alpha.png")));
+            var graphics = res.createGraphics();
+            try {
+                graphics.drawImage(bg, 0, 0, null);
+                for (int i = 0, x = (bg.getWidth() + 8 - (256 + 8) * icons) / 2, y = (bg.getHeight() - 256) / 2, s = 256 + 8; i < icons; i++, x += s)
+                    graphics.drawImage(osIcon, x, y, 256, 256, null);
+                for (int i = 0, x = (bg.getWidth() + 8 - (64 + 8) * icons) / 2, y = (bg.getHeight() - 64) / 2 + 256 + 16, s = 64 + 8; i < icons; i++, x += s)
+                    graphics.drawImage(otherIcon, x, y, 64, 64, null);
+            } finally {
+                graphics.dispose();
+            }
+            ImageIO.write(res, "png", Files.newOutputStream(build.resolve("background.png")));
+
+        } else Files.copy(templates.resolve("bg_480.png"), build.resolve("background.png"), REPLACE_EXISTING);
 
         prt(" * Manage Other Files * ");
-        Files.copy(src.resolve("selection_big.png"), build.resolve("selection_big.png"), REPLACE_EXISTING);
-        Files.copy(src.resolve("selection_small.png"), build.resolve("selection_small.png"), REPLACE_EXISTING);
+        if (args.containsKey("bgbakeicons")) {
+            Files.copy(templates.resolve("button_down_big_alpha.png"), build.resolve("selection_big.png"), REPLACE_EXISTING);
+            Files.copy(templates.resolve("button_down_small_alpha.png"), build.resolve("selection_small.png"), REPLACE_EXISTING);
+        } else {
+            Files.copy(src.resolve("selection_big.png"), build.resolve("selection_big.png"), REPLACE_EXISTING);
+            Files.copy(src.resolve("selection_small.png"), build.resolve("selection_small.png"), REPLACE_EXISTING);
+        }
     }
 
     static int clean(Iterator<String> proc) throws IOException {
