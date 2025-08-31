@@ -37,8 +37,9 @@ Static:
 * This will generate a simple theme using [background](templates/bg_1080.png) 
 and merge the icons in [icons](icons) with [appropriate selection image](templates/button_big_alpha.png)
 * The selection will draw a white border around the icons.
+* Skip the next section
 
-Baked:
+Backed:
 * If you know the number of icons which will be shown, and they tend
 to remain constant for longer periods of time, then you can bake
 those icons into the background image.
@@ -48,5 +49,9 @@ those icons into the background image.
 with the [background](templates/bg_1080.png) and replace selection
 with [appropriate button down](templates/button_down_big_alpha.png).
 * The selection will be drawn as if, the button was actually pressed.
+* Continue the next section
+
+Installation:
+* Just copy the rEFInd-Minecraft folder to your rEFInd's themes folder.
 
 **Do not use the `install.sh` script**
