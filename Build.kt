@@ -20,28 +20,22 @@ val TEMPLATES = Files.createDirectories(ROOT.resolve("templates"))
 val BUILD = Files.createDirectories(ROOT.resolve("build").resolve(NAME))
 val BUILD_ICONS = Files.createDirectories(BUILD.resolve("icons"))
 
+// Magic Constants
+val SELECTION_BIG_SIZE = 256 + 32
+val SELECTION_SMALL_SIZE = 64 + 22
+
 typealias ImageStream = Stream<Pair<String, BufferedImage>>
 
-fun Path.toBI(): BufferedImage =
-    ImageIO.read(Files.newInputStream(this))
+fun Path.toBI(): BufferedImage = ImageIO.read(Files.newInputStream(this))
 
-fun Stream<Path>.toBI(): ImageStream = this
-    .map { it.fileName.toString() to it.toBI() }
-    .filter(Objects::nonNull)
+fun Stream<Path>.toBI(): ImageStream = this.map { it.fileName.toString() to it.toBI() }.filter(Objects::nonNull)
 
-fun osIcons(): ImageStream =
-    Files.list(SRC)
-        .filter { it.fileName.toString().matches("^os_.*\\.png$".toRegex()) }
-        .toBI()
+fun osIcons(): ImageStream = Files.list(SRC).filter { it.fileName.toString().matches("^os_.*\\.png$".toRegex()) }.toBI()
 
 fun otherIcons(): ImageStream =
-    Files.list(SRC)
-        .filter { !it.fileName.toString().matches("^os_.*\\.png$".toRegex()) }
-        .toBI()
+    Files.list(SRC).filter { !it.fileName.toString().matches("^os_.*\\.png$".toRegex()) }.toBI()
 
-fun backgroundImage(): ImageStream =
-    Stream.of(TEMPLATES.resolve("bg_1080.png"))
-        .toBI()
+fun backgroundImage(): ImageStream = Stream.of(TEMPLATES.resolve("bg_1080.png")).toBI()
 
 fun selectionBigImage(mc: Boolean): ImageStream = Stream.of(
     if (mc) TEMPLATES.resolve("button_down_big_alpha.png")
@@ -59,15 +53,12 @@ fun selectionSmlImage(mc: Boolean): ImageStream = Stream.of(
 //    .defaultConfiguration
 //    .createCompatibleImage(w, h)
 
-fun createCompatibleImage(w: Int, h: Int): BufferedImage =
-    BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB)
+fun createCompatibleImage(w: Int, h: Int): BufferedImage = BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB)
 
-fun createCompatibleImage(image: BufferedImage): BufferedImage =
-    createCompatibleImage(image.width, image.height)
+fun createCompatibleImage(image: BufferedImage): BufferedImage = createCompatibleImage(image.width, image.height)
 
 fun BufferedImage.graphicsTransform(
-    preTransform: BufferedImage? = null,
-    transform: (BufferedImage, Graphics2D) -> Unit
+    preTransform: BufferedImage? = null, transform: (BufferedImage, Graphics2D) -> Unit
 ): BufferedImage {
     val result = preTransform ?: createCompatibleImage(this)
     val graphics = result.createGraphics()
@@ -76,59 +67,77 @@ fun BufferedImage.graphicsTransform(
     return result
 }
 
-fun ImageStream.graphicsTransform(transform: (BufferedImage, Graphics2D) -> Unit): ImageStream = this
-    .map { return@map it.first to it.second.graphicsTransform(transform = transform) }
+fun ImageStream.graphicsTransform(transform: (BufferedImage, Graphics2D) -> Unit): ImageStream =
+    this.map { return@map it.first to it.second.graphicsTransform(transform = transform) }
 
-fun BufferedImage.scaleTo(width: Int, height: Int = width): BufferedImage = this
-    .graphicsTransform(createCompatibleImage(width, height))
-    { image, g2d -> g2d.drawImage(image, 0, 0, width, height, null) }
+fun BufferedImage.scaleTo(width: Int, height: Int = width): BufferedImage =
+    this.graphicsTransform(createCompatibleImage(width, height)) { image, g2d ->
+        g2d.drawImage(
+            image,
+            0,
+            0,
+            width,
+            height,
+            null
+        )
+    }
 
-fun ImageStream.scaleTo(width: Int, height: Int = width): ImageStream = this
-    .map { return@map it.first to it.second.scaleTo(width, height) }
+fun BufferedImage.centerFitTo(width: Int, height: Int = width): BufferedImage =
+    this.graphicsTransform(createCompatibleImage(width, height)) { image, g2d ->
+        g2d.drawImage(
+            image,
+            (width - this.width) / 2,
+            (height - this.height) / 2,
+            null
+        )
+    }
+
+fun ImageStream.scaleTo(width: Int, height: Int = width): ImageStream =
+    this.map { return@map it.first to it.second.scaleTo(width, height) }
+
+fun ImageStream.centerFitTo(width: Int, height: Int = width): ImageStream =
+    this.map { return@map it.first to it.second.centerFitTo(width, height) }
 
 fun ImageStream.tint(color: Color, alpha: Float): ImageStream {
     val tintOp = TintOp(color, alpha)
     return this.graphicsTransform { image, g2d -> g2d.drawImage(image, tintOp, 0, 0) }
 }
 
-fun ImageStream.addBg(bg: BufferedImage): ImageStream = this
-    .graphicsTransform { image, g2D ->
-        g2D.drawImage(bg, 0, 0, image.width, image.height, null)
-        g2D.drawImage(image, 0, 0, null)
-    }
+fun ImageStream.addBg(bg: BufferedImage): ImageStream = this.graphicsTransform { image, g2D ->
+    g2D.drawImage(bg, 0, 0, image.width, image.height, null)
+    g2D.drawImage(image, 0, 0, null)
+}
 
 fun ImageStream.bakeIcons(
     icon: BufferedImage,
     count: Int,
-    xPadding: Int = 8,
-    yPadding: Int = 256 + 16,
+    xPadding: Int = (SELECTION_BIG_SIZE - 256) + 8,
+    yPadding: Int = 256 / 2 + 64 / 2 + xPadding + 3,
     row: Boolean = true,
-): ImageStream = this
-    .graphicsTransform { image, g2D ->
-        g2D.drawImage(image, 0, 0, null)
+): ImageStream = this.graphicsTransform { image, g2D ->
+    g2D.drawImage(image, 0, 0, null)
 
-        val W = image.width
-        val H = image.height
-        val w = icon.width
-        val h = icon.height
+    val W = image.width
+    val H = image.height
+    val w = icon.width
+    val h = icon.height
 
-        val startX = (W + xPadding - (w + xPadding) * count) / 2
-        val startY = (H - h) / 2 + if (row) 0 else yPadding
-        val stepX = w + xPadding
+    val startX = (W + xPadding - (w + xPadding) * count) / 2
+    val startY = (H - h) / 2 + if (row) 0 else yPadding
+    val stepX = w + xPadding
 
-        (0..<count).forEach { g2D.drawImage(icon, startX + stepX * it, startY, null) }
-    }
+    (0..<count).forEach { g2D.drawImage(icon, startX + stepX * it, startY, null) }
+}
 
-fun ImageStream.writeTo(path: Path): Unit = this
-    .forEach { ImageIO.write(it.second, "png", Files.newOutputStream(path.resolve(it.first))) }
+fun ImageStream.writeTo(path: Path): Unit =
+    this.forEach { ImageIO.write(it.second, "png", Files.newOutputStream(path.resolve(it.first))) }
 
 typealias Pipeline = MutableList<(ImageStream) -> ImageStream>
 
 fun createPipeline(): Pipeline = mutableListOf()
 
 fun Pipeline.add(
-    really: Boolean,
-    element: (ImageStream) -> ImageStream
+    really: Boolean, element: (ImageStream) -> ImageStream
 ): Pipeline {
     if (really) add(element)
     return this
@@ -171,10 +180,32 @@ fun job(title: String, code: () -> Unit) {
 }
 
 fun help(args: Iterator<String> = emptySet<String>().iterator()) {
-
+    val help = """
+                `help`         - Show the entire help message.
+                `help word`    - Show related to the word.
+            """.trimIndent()
+    val build = """
+                `build`        - Build the basic static rEFInd Theme. Very Boring.
+                `build [args]` - Configure the build process.
+                List of extra args:
+                    `bakeBg`              - Bakes the provided number of icons to the wallpaper,
+                                            to give the illusion of button presses. 
+                    `bakeBg.osIcons=N`    - Specify how many OS Icons to bake.
+                    `bakeBg.otherIcons=N` - Specify how many Other Icons to bake.                
+            """.trimIndent()
+    val clean = "`clean`        - Delete the build folder"
+    if (args.hasNext()) println(
+        when (args.next()) {
+            "help" -> help
+            "build" -> build
+            "clean" -> clean
+            else -> "What's that?"
+        }
+    ) else println("$help\n\n$build\n\n$clean")
 }
 
 fun clean(args: Iterator<String>) = job("CLEAN") {
+    assert(!args.hasNext())
     clean(BUILD)
 }
 
@@ -193,32 +224,31 @@ fun build(proc: Iterator<String>) = job("BUILD") {
     val osIconsCount = args["bakebg.osicons"]?.toInt() ?: 0
     val otherIconsCount = args["bakebg.othericons"]?.toInt() ?: 0
 
-    createPipeline()
-        .add(true) { it.scaleTo(256) }
+    createPipeline().add(true) { it.scaleTo(256) }
         .add(true) { it.tint(Color(0x29272A), 1.0f) } // Lighter shade 0x403B3C
-        .add(!bakeBg) { it.addBg(TEMPLATES.resolve("button_big_alpha.png").toBI()) }
-        .execute(osIcons(), BUILD_ICONS)
+        .add(!bakeBg) { it.addBg(TEMPLATES.resolve("button_big_alpha.png").toBI()) }.execute(osIcons(), BUILD_ICONS)
 
-    createPipeline()
-        .add(true) { it.scaleTo(64) }
-        .add(true) { it.tint(Color(0x29272A), 1.0f) }
+    createPipeline().add(true) { it.scaleTo(64) }.add(true) { it.tint(Color(0x29272A), 1.0f) }
         .add(!bakeBg) { it.addBg(TEMPLATES.resolve("button_small_alpha.png").toBI()) }
         .execute(otherIcons(), BUILD_ICONS)
 
-    createPipeline()
-        .add(true) { it.map { "background.png" to it.second } }
+    createPipeline().add(true) { it.map { "background.png" to it.second } }
         .add(bakeBg) { it.bakeIcons(TEMPLATES.resolve("button_big_alpha.png").toBI().scaleTo(256), osIconsCount) }
-        .add(bakeBg)
-        { it.bakeIcons(TEMPLATES.resolve("button_small_alpha.png").toBI().scaleTo(64), otherIconsCount, row = false) }
-        .execute(backgroundImage(), BUILD)
+        .add(bakeBg) {
+            it.bakeIcons(
+                TEMPLATES.resolve("button_small_alpha.png").toBI().scaleTo(64),
+                otherIconsCount,
+                row = false
+            )
+        }.execute(backgroundImage(), BUILD)
 
-    createPipeline()
-        .add(true) { it.map { "selection_big.png" to it.second } }
-        .execute(selectionBigImage(bakeBg), BUILD)
+    createPipeline().add(!bakeBg) { it.scaleTo(SELECTION_BIG_SIZE) }
+        .add(bakeBg) { it.scaleTo(256).centerFitTo(SELECTION_BIG_SIZE) }
+        .add(true) { it.map { "selection_big.png" to it.second } }.execute(selectionBigImage(bakeBg), BUILD)
 
-    createPipeline()
-        .add(true) { it.map { "selection_small.png" to it.second } }
-        .execute(selectionSmlImage(bakeBg), BUILD)
+    createPipeline().add(!bakeBg) { it.scaleTo(SELECTION_SMALL_SIZE) }
+        .add(bakeBg) { it.scaleTo(64).centerFitTo(SELECTION_SMALL_SIZE) }
+        .add(true) { it.map { "selection_small.png" to it.second } }.execute(selectionSmlImage(bakeBg), BUILD)
 
     migrateConfiguration()
 }
@@ -226,8 +256,7 @@ fun build(proc: Iterator<String>) = job("BUILD") {
 fun migrateConfiguration() {
     Files.lines(ROOT.resolve("theme.conf")).use { lines ->
         Files.newBufferedWriter(BUILD.resolve("theme.conf")).use { writer ->
-            lines.map { it.replace("rEFInd-Minimalist", NAME) }
-                .forEach { writer.write(it);writer.newLine() }
+            lines.map { it.replace("rEFInd-Minimalist", NAME) }.forEach { writer.write(it);writer.newLine() }
         }
     }
 }
@@ -264,7 +293,8 @@ class TintOp(val tintColor: Color, val alpha: Float) : BufferedImageOp {
         return BufferedImage(
             destCM,
             destCM.createCompatibleWritableRaster(src.getWidth(), src.getHeight()),
-            destCM.isAlphaPremultiplied(), null
+            destCM.isAlphaPremultiplied(),
+            null
         )
     }
 
